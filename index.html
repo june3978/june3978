@@ -1,15 +1,579 @@
 <!doctype html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<html><head>
-<title>갓_어도비
-</title></head>
-<frameset rows="30%,70%">
-<frame src=top.html>
-<frameset cols="20%,80%">
-<frame src=left.html>
-<frame src=right1.html name=right>
-</frameset>
-</frameset>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>숲속 쉼터 - 2D 힐링 게임</title>
+  <style>
+    :root {
+      --text: #21422f;
+      --panel: #ffffffcf;
+      --soft: #e6f4ea;
+      --accent: #5faf77;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 15% 20%, #dff7e6 0, #bfeacc 35%, #9bd7ba 100%);
+      overflow: hidden;
+    }
+    .wrap {
+      width: min(96vw, 1060px);
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 14px;
+      align-items: start;
+    }
+    canvas {
+      width: 100%;
+      border-radius: 20px;
+      border: 4px solid #ffffffaa;
+      box-shadow: 0 20px 48px #12351d2f;
+      background: #95d6a6;
+    }
+    .panel {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 12px;
+      backdrop-filter: blur(5px);
+      box-shadow: 0 10px 24px #1732221d;
+      margin-bottom: 10px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.1rem; }
+    .tip, li { font-size: .9rem; line-height: 1.4; }
+    .tip { margin: 0; }
+    ul { margin: 8px 0 0; padding-left: 16px; }
+    .row { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: .9rem; }
+    .big { margin-top: 10px; font-weight: 700; color: #2b6e44; }
+    .bar {
+      height: 10px;
+      margin-top: 6px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #d7eadc;
+    }
+    .fill {
+      height: 100%;
+      width: 10%;
+      transition: width .25s ease;
+      background: linear-gradient(90deg, #85d39d, #449f61);
+    }
+    button {
+      border: 0;
+      background: #5ea977;
+      color: white;
+      border-radius: 10px;
+      padding: 7px 10px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: .85rem;
+    }
+    button:hover { filter: brightness(1.05); }
+    .subtle { background: #9aa8a0; }
+    .quest-item.done { color: #2c8a4a; text-decoration: line-through; }
+    @media (max-width: 930px) {
+      .wrap { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <canvas id="game" width="760" height="532" aria-label="2D 힐링 게임"></canvas>
+    <aside>
+      <section class="panel">
+        <h1>🌿 숲속 쉼터</h1>
+        <p class="tip">WASD / 방향키 이동 · Shift 천천히 걷기 · E 상호작용</p>
+        <ul>
+          <li>🪵 나무: 목재 수집</li>
+          <li>🌸 꽃: 꽃잎 수집</li>
+          <li>🐟 연못: 낚시</li>
+          <li>🔥 모닥불: 휴식/제작</li>
+          <li>🦝 토토: NPC 대화</li>
+        </ul>
+        <div class="big" id="score">힐링 포인트: 0</div>
+        <div class="tip">오늘의 여유 지수</div>
+        <div class="bar"><div class="fill" id="calmBar"></div></div>
+        <p class="tip" id="message" style="min-height:45px; margin-top:10px;">산들바람을 느끼며 걸어보세요.</p>
+      </section>
+
+      <section class="panel">
+        <strong>🎒 가방</strong>
+        <div class="tip" id="bag">목재 0 · 꽃잎 0 · 물고기 0 · 별조각 0</div>
+        <div class="row">
+          <span>🛖 제작: 힐링 티 세트 (목재 3 + 꽃잎 2)</span>
+          <button id="craftBtn">제작</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <strong>🗓 오늘의 퀘스트</strong>
+        <ul id="questList" style="margin-top:8px;"></ul>
+      </section>
+
+      <section class="panel">
+        <div class="row"><span>⏰ 시간대</span><strong id="clock">아침</strong></div>
+        <div class="row"><span>💾 저장</span><span id="saveState" class="tip">자동 저장 준비</span></div>
+        <div class="row" style="margin-top:10px;">
+          <button id="saveBtn">수동 저장</button>
+          <button id="resetBtn" class="subtle">초기화</button>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const bagEl = document.getElementById('bag');
+    const calmBar = document.getElementById('calmBar');
+    const messageEl = document.getElementById('message');
+    const questList = document.getElementById('questList');
+    const clockEl = document.getElementById('clock');
+    const saveStateEl = document.getElementById('saveState');
+    const craftBtn = document.getElementById('craftBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const SAVE_KEY = 'healing-forest-save-v2';
+    const controls = {};
+
+    const world = {
+      tile: 38,
+      cols: canvas.width / 38,
+      rows: canvas.height / 38,
+      time: 0,
+      score: 0,
+      quests: {
+        gatherWood: { title: '목재 5개 모으기', goal: 5, value: 0, reward: 25, done: false },
+        gatherPetal: { title: '꽃잎 4개 모으기', goal: 4, value: 0, reward: 25, done: false },
+        catchFish: { title: '물고기 2마리 잡기', goal: 2, value: 0, reward: 35, done: false },
+      },
+      inventory: { wood: 0, petal: 0, fish: 0, stardust: 0 },
+      messageTimer: 0,
+      floatingTexts: [],
+      particles: Array.from({ length: 52 }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: 1 + Math.random() * 2,
+        vx: 0.05 + Math.random() * 0.2,
+        vy: -0.02 - Math.random() * 0.08,
+      }))
+    };
+
+    const player = {
+      x: canvas.width * 0.45,
+      y: canvas.height * 0.55,
+      speed: 2.35,
+      facing: 'down',
+      interactCooldown: 0,
+    };
+
+    const npc = {
+      x: 580,
+      y: 152,
+      dir: 1,
+      timer: 0,
+      talkCooldown: 0,
+    };
+
+    const objects = [
+      { id: 't1', type: 'tree', x: 130, y: 120, cool: 0 },
+      { id: 't2', type: 'tree', x: 575, y: 102, cool: 0 },
+      { id: 't3', type: 'tree', x: 672, y: 406, cool: 0 },
+      { id: 'f1', type: 'flower', x: 276, y: 148, cool: 0 },
+      { id: 'f2', type: 'flower', x: 486, y: 242, cool: 0 },
+      { id: 'f3', type: 'flower', x: 346, y: 390, cool: 0 },
+      { id: 'p1', type: 'pond', x: 190, y: 350, cool: 0 },
+      { id: 'p2', type: 'pond', x: 520, y: 358, cool: 0 },
+      { id: 'camp', type: 'campfire', x: 360, y: 244, cool: 0 }
+    ];
+
+    const sayings = [
+      '작은 걸음도 멋진 산책이에요.',
+      '오늘도 충분히 잘하고 있어요.',
+      '물결을 보면 마음도 잔잔해져요.',
+      '숲은 언제나 당신 편이에요.',
+      '잠깐 멈춰서 숨을 크게 쉬어보세요.'
+    ];
+
+    function distance(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function setMessage(text, timer = 220) {
+      messageEl.textContent = text;
+      world.messageTimer = timer;
+    }
+
+    function addFloating(text, color = '#fff') {
+      world.floatingTexts.push({ x: player.x, y: player.y - 20, text, color, life: 85 });
+    }
+
+    function gain(points, text) {
+      world.score += points;
+      addFloating(`${text} +${points}`, '#ffffff');
+    }
+
+    function updateQuest(type) {
+      if (type === 'tree') world.quests.gatherWood.value++;
+      if (type === 'flower') world.quests.gatherPetal.value++;
+      if (type === 'pond') world.quests.catchFish.value++;
+
+      Object.values(world.quests).forEach((q) => {
+        if (!q.done && q.value >= q.goal) {
+          q.done = true;
+          world.score += q.reward;
+          setMessage(`퀘스트 완료! ${q.title} (+${q.reward})`);
+          addFloating(`퀘스트 완료 +${q.reward}`, '#ffe77a');
+        }
+      });
+    }
+
+    function updateUI() {
+      scoreEl.textContent = `힐링 포인트: ${world.score}`;
+      bagEl.textContent = `목재 ${world.inventory.wood} · 꽃잎 ${world.inventory.petal} · 물고기 ${world.inventory.fish} · 별조각 ${world.inventory.stardust}`;
+      calmBar.style.width = `${Math.min(100, 10 + world.score / 3)}%`;
+      const t = (Math.sin(world.time) + 1) / 2;
+      clockEl.textContent = t > 0.66 ? '낮' : t > 0.33 ? '오후' : '밤';
+
+      questList.innerHTML = '';
+      Object.values(world.quests).forEach((q) => {
+        const li = document.createElement('li');
+        li.className = `quest-item ${q.done ? 'done' : ''}`;
+        li.textContent = `${q.title} (${Math.min(q.value, q.goal)}/${q.goal})`;
+        questList.appendChild(li);
+      });
+    }
+
+    function getNearObject() {
+      const nearObj = objects.find((o) => distance(player, o) < 60 && o.cool <= 0);
+      if (nearObj) return nearObj;
+      if (distance(player, npc) < 62 && npc.talkCooldown <= 0) return { type: 'npc', x: npc.x, y: npc.y };
+      return null;
+    }
+
+    function interact() {
+      const near = getNearObject();
+      if (!near) {
+        setMessage('조금 더 가까이 다가가서 E를 눌러보세요.');
+        return;
+      }
+
+      if (near.type === 'npc') {
+        npc.talkCooldown = 180;
+        if (Math.random() < 0.35) {
+          world.inventory.stardust++;
+          gain(12, '+별조각');
+          setMessage('토토가 별조각을 선물해줬어요 ✨');
+        } else {
+          setMessage(sayings[Math.floor(Math.random() * sayings.length)]);
+        }
+        return;
+      }
+
+      near.cool = 180;
+      if (near.type === 'tree') {
+        world.inventory.wood++;
+        gain(8, '+목재');
+      } else if (near.type === 'flower') {
+        world.inventory.petal++;
+        gain(10, '+꽃잎');
+      } else if (near.type === 'pond') {
+        world.inventory.fish++;
+        gain(14, '+물고기');
+      } else if (near.type === 'campfire') {
+        gain(5, '+휴식');
+        setMessage('따뜻한 모닥불 앞에서 마음이 안정됩니다.');
+        if (Math.random() < 0.2) {
+          world.inventory.stardust++;
+          addFloating('+별조각', '#bde5ff');
+        }
+      }
+
+      if (near.type !== 'campfire') updateQuest(near.type);
+      if (Math.random() < 0.34) setMessage(sayings[Math.floor(Math.random() * sayings.length)]);
+    }
+
+    function craftTeaSet() {
+      if (world.inventory.wood < 3 || world.inventory.petal < 2) {
+        setMessage('재료가 부족해요. 목재 3개와 꽃잎 2개가 필요합니다.');
+        return;
+      }
+      world.inventory.wood -= 3;
+      world.inventory.petal -= 2;
+      gain(40, '힐링 티 세트 제작');
+      setMessage('향긋한 티 세트를 만들었어요. 마음이 차분해집니다.');
+    }
+
+    function saveGame(manual = false) {
+      const payload = {
+        world: {
+          score: world.score,
+          inventory: world.inventory,
+          quests: world.quests,
+          time: world.time
+        },
+        player: { x: player.x, y: player.y },
+        npc: { x: npc.x, y: npc.y }
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      saveStateEl.textContent = manual ? '수동 저장 완료' : `자동 저장 ${new Date().toLocaleTimeString('ko-KR')}`;
+    }
+
+    function loadGame() {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw);
+        world.score = data.world.score ?? world.score;
+        world.time = data.world.time ?? world.time;
+        Object.assign(world.inventory, data.world.inventory || {});
+        Object.keys(world.quests).forEach((key) => {
+          if (data.world.quests && data.world.quests[key]) {
+            Object.assign(world.quests[key], data.world.quests[key]);
+          }
+        });
+        player.x = data.player?.x ?? player.x;
+        player.y = data.player?.y ?? player.y;
+        npc.x = data.npc?.x ?? npc.x;
+        npc.y = data.npc?.y ?? npc.y;
+        setMessage('이전 산책 기록을 불러왔어요.');
+        saveStateEl.textContent = '자동 저장 데이터 불러옴';
+      } catch {
+        setMessage('저장 데이터가 손상되어 새로 시작합니다.');
+      }
+    }
+
+    function updateNpc() {
+      npc.timer++;
+      npc.x += 0.35 * npc.dir;
+      if (npc.x > 650) npc.dir = -1;
+      if (npc.x < 540) npc.dir = 1;
+      npc.y += Math.sin(npc.timer * 0.04) * 0.22;
+      if (npc.talkCooldown > 0) npc.talkCooldown--;
+    }
+
+    function update() {
+      world.time += 0.003;
+      if (world.messageTimer > 0) world.messageTimer--;
+      if (player.interactCooldown > 0) player.interactCooldown--;
+
+      const slow = controls.shift ? 0.55 : 1;
+      let dx = 0;
+      let dy = 0;
+      if (controls.w || controls.arrowup) { dy -= 1; player.facing = 'up'; }
+      if (controls.s || controls.arrowdown) { dy += 1; player.facing = 'down'; }
+      if (controls.a || controls.arrowleft) { dx -= 1; player.facing = 'left'; }
+      if (controls.d || controls.arrowright) { dx += 1; player.facing = 'right'; }
+
+      if (dx || dy) {
+        const len = Math.hypot(dx, dy);
+        player.x += (dx / len) * player.speed * slow;
+        player.y += (dy / len) * player.speed * slow;
+      }
+
+      player.x = Math.max(18, Math.min(canvas.width - 18, player.x));
+      player.y = Math.max(18, Math.min(canvas.height - 18, player.y));
+
+      if (controls.e && player.interactCooldown <= 0) {
+        player.interactCooldown = 24;
+        interact();
+      }
+
+      updateNpc();
+      for (const obj of objects) if (obj.cool > 0) obj.cool--;
+
+      for (const p of world.particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x > canvas.width + 8) p.x = -8;
+        if (p.y < -8) p.y = canvas.height + 8;
+      }
+
+      world.floatingTexts = world.floatingTexts.filter((f) => {
+        f.y -= 0.35;
+        f.life -= 1;
+        return f.life > 0;
+      });
+
+      if (world.messageTimer <= 0 && Math.random() < 0.0037) {
+        setMessage(sayings[Math.floor(Math.random() * sayings.length)]);
+      }
+
+      updateUI();
+    }
+
+    function drawGround() {
+      for (let y = 0; y < world.rows; y++) {
+        for (let x = 0; x < world.cols; x++) {
+          const odd = (x + y) % 2 === 0;
+          ctx.fillStyle = odd ? '#9edfac' : '#95d8a5';
+          ctx.fillRect(x * world.tile, y * world.tile, world.tile, world.tile);
+        }
+      }
+    }
+
+    function drawObject(o) {
+      ctx.save();
+      ctx.globalAlpha = o.cool <= 0 ? 1 : 0.45;
+      if (o.type === 'tree') {
+        ctx.fillStyle = '#4f7f36';
+        ctx.beginPath();
+        ctx.arc(o.x, o.y - 16, 22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#7f5436';
+        ctx.fillRect(o.x - 6, o.y - 6, 12, 24);
+      } else if (o.type === 'flower') {
+        ctx.strokeStyle = '#3f8f56';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(o.x, o.y + 16);
+        ctx.lineTo(o.x, o.y - 2);
+        ctx.stroke();
+        const petals = ['#ff98bf', '#ffd56f', '#ff84c8', '#ffe681', '#ffafdb'];
+        for (let i = 0; i < 5; i++) {
+          const a = i * (Math.PI * 2 / 5);
+          ctx.fillStyle = petals[i];
+          ctx.beginPath();
+          ctx.arc(o.x + Math.cos(a) * 9, o.y - 7 + Math.sin(a) * 9, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = '#ffe169';
+        ctx.beginPath();
+        ctx.arc(o.x, o.y - 7, 5, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (o.type === 'pond') {
+        ctx.fillStyle = '#73bfe8';
+        ctx.beginPath();
+        ctx.ellipse(o.x, o.y, 34, 20, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#9dd5f3';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(o.x - 6, o.y - 2, 8, 0, Math.PI);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#705133';
+        ctx.fillRect(o.x - 11, o.y + 5, 22, 7);
+        ctx.fillStyle = '#ff9f52';
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffd186';
+        ctx.beginPath();
+        ctx.arc(o.x - 2, o.y - 1, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      if (o.cool > 0 && o.type !== 'campfire') {
+        ctx.fillStyle = '#ffffffcc';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('회복 중...', o.x - 22, o.y - 30);
+      }
+    }
+
+    function drawNpc() {
+      ctx.save();
+      ctx.translate(npc.x, npc.y);
+      ctx.fillStyle = '#6d4b2f';
+      ctx.beginPath();
+      ctx.arc(0, -5, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f0d7b4';
+      ctx.beginPath();
+      ctx.arc(0, -5, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#476a93';
+      ctx.fillRect(-9, 8, 18, 16);
+      ctx.restore();
+    }
+
+    function drawPlayer() {
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.fillStyle = '#2e5f8e';
+      ctx.fillRect(-10, 2, 20, 20);
+      ctx.fillStyle = '#f7d9bf';
+      ctx.beginPath();
+      ctx.arc(0, -8, 10, 0, Math.PI * 2);
+      ctx.fill();
+      const eyeOffset = player.facing === 'left' ? -2.8 : player.facing === 'right' ? 2.8 : 0;
+      ctx.fillStyle = '#22384d';
+      ctx.beginPath();
+      ctx.arc(-3 + eyeOffset, -9, 1.5, 0, Math.PI * 2);
+      ctx.arc(3 + eyeOffset, -9, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawParticlesAndTint() {
+      for (const p of world.particles) {
+        ctx.fillStyle = '#ffffff66';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const daylight = (Math.sin(world.time) + 1) / 2;
+      const alpha = Math.max(0.08, 0.42 - daylight * 0.3);
+      ctx.fillStyle = `rgba(19, 35, 57, ${alpha.toFixed(3)})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function drawTexts() {
+      for (const f of world.floatingTexts) {
+        ctx.globalAlpha = Math.max(0, f.life / 85);
+        ctx.fillStyle = f.color;
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText(f.text, f.x - 34, f.y);
+      }
+      ctx.globalAlpha = 1;
+
+      const near = getNearObject();
+      if (near) {
+        ctx.fillStyle = '#ffffffde';
+        ctx.fillRect(player.x - 52, player.y - 48, 104, 22);
+        ctx.fillStyle = '#2e533d';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('E 키로 상호작용', player.x - 38, player.y - 33);
+      }
+    }
+
+    function render() {
+      drawGround();
+      objects.forEach(drawObject);
+      drawNpc();
+      drawPlayer();
+      drawParticlesAndTint();
+      drawTexts();
+    }
+
+    function loop() {
+      update();
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    addEventListener('keydown', (e) => { controls[e.key.toLowerCase()] = true; });
+    addEventListener('keyup', (e) => { controls[e.key.toLowerCase()] = false; });
+
+    craftBtn.addEventListener('click', craftTeaSet);
+    saveBtn.addEventListener('click', () => saveGame(true));
+    resetBtn.addEventListener('click', () => {
+      localStorage.removeItem(SAVE_KEY);
+      location.reload();
+    });
+
+    loadGame();
+    updateUI();
+    setInterval(() => saveGame(false), 5000);
+    loop();
+  </script>
+</body>
 </html>
